@@ -21,6 +21,13 @@ var cloudwatch = new AWS.CloudWatch(config);
 const Influx = require('influxdb-nodejs');
 const client = new Influx(INFLUX_DB);
 
+var express = require('express');
+var prometheus = require('prom-client');
+
+var prometheusMetrics = {};
+
+prometheus.collectDefaultMetrics();
+
 // simple countdown 
 function CDL(countdown, completion) {
   this.signal = function() { 
@@ -78,6 +85,23 @@ setInterval(function(){
     })
     .then(() => console.info('write point success'))
     .catch(console.error);
+
+    prometheusMetrics.hyperflow_monitor_worker_count = prometheusMetrics.hyperflow_monitor_worker_count ||
+        new prometheus.Gauge({
+          name: 'hyperflow_monitor_worker_count',
+          help: 'Alarm monitor worker count',
+          labelNames: ['region', 'alarmHigh', 'alarmLow']
+        });
+    prometheusMetrics.hyperflow_monitor_worker_count.set({region: AWS_REGION, alarmHigh : AlarmHightValue, alarmLow: AlarmLowValue}, taskCount);
+
+    prometheusMetrics.hyperflow_monitor_ec2_count = prometheusMetrics.hyperflow_monitor_ec2_count ||
+        new prometheus.Gauge({
+          name: 'hyperflow_monitor_ec2_count',
+          help: 'Alarm monitor ec2 count',
+          labelNames: ['region', 'alarmHigh', 'alarmLow']
+        });
+    prometheusMetrics.hyperflow_monitor_ec2_count.set({region: AWS_REGION, alarmHigh : AlarmHightValue, alarmLow: AlarmLowValue}, containerCount);
+
   });
 
   ecs.listContainerInstances(params, function(err, data) {
@@ -128,3 +152,11 @@ setInterval(function(){
 }, 1000);
   
 
+var app = express();
+
+app.get('/metrics', (req, res) => {
+  res.set('Content-Type', prometheus.register.contentType);
+  res.send(prometheus.register.metrics());
+});
+
+app.listen(3003, () => console.log(`Example app listening on port 3003!`))

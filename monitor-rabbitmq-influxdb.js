@@ -24,6 +24,13 @@ const Influx = require('influxdb-nodejs');
 
 const client = new Influx(INFLUX_DB);
 
+var express = require('express');
+var prometheus = require('prom-client');
+
+var prometheusMetrics = {};
+
+prometheus.collectDefaultMetrics();
+
 const fieldSchema = {
     QueueLength: 'i',
     consumerCount: 'i',
@@ -115,7 +122,23 @@ amqp.connect(AMQP_URL, function(err, conn) {
                 })
                 .then(() => console.info('write point success'))
                 .catch(console.error);
-              
+
+                prometheusMetrics.hyperflow_rabbitmq_monitor_queue_length = prometheusMetrics.hyperflow_rabbitmq_monitor_queue_length ||
+                    new prometheus.Gauge({
+                      name: 'hyperflow_rabbitmq_monitor_queue_length',
+                      help: 'RabbitMQ queue length',
+                      labelNames: ['queue'],
+                    });
+                prometheusMetrics.hyperflow_rabbitmq_monitor_queue_length.set({queue: ok.queue}, ok.messageCount);
+
+                prometheusMetrics.hyperflow_rabbitmq_monitor_consumer_count = prometheusMetrics.hyperflow_rabbitmq_monitor_consumer_count ||
+                    new prometheus.Gauge({
+                      name: 'hyperflow_rabbitmq_monitor_consumer_count',
+                      help: 'RabbitMQ consumer count',
+                      labelNames: ['queue'],
+                    });
+                prometheusMetrics.hyperflow_rabbitmq_monitor_consumer_count.set({queue: ok.queue}, ok.consumerCount);
+
                 notifyCloudWatchMetric(mcount);
               }
             });
@@ -123,4 +146,13 @@ amqp.connect(AMQP_URL, function(err, conn) {
      });
 
   });
+
+var app = express();
+
+app.get('/metrics', (req, res) => {
+  res.set('Content-Type', prometheus.register.contentType);
+  res.send(prometheus.register.metrics());
+});
+
+app.listen(3004, () => console.log(`Example app listening on port 3004!`))
   
